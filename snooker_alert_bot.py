@@ -11,11 +11,10 @@ import os
 
 # Получаем токен из переменных окружения (для Heroku)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-# Вставь сюда свой настоящий chat_id (число), чтобы получать ответы подписчиков
-OWNER_CHAT_ID = 734782204
-
 SUBSCRIBERS_FILE = 'subscribers.json'
+
+# Введи сюда свой личный chat_id (число)
+OWNER_CHAT_ID = 734782204  # <-- ЗАМЕНИ на свой chat_id
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -211,19 +210,14 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_chat.id)
+async def handle_user_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_chat.id
+    user_name = update.effective_user.full_name
     text = update.message.text
 
-    # Сохраняем в файл (если нужно)
-    with open('user_replies.txt', 'a', encoding='utf-8') as f:
-        f.write(f"{user_id}: {text}\n")
-
-    # Отправляем владельцу бота в личку
-    await context.bot.send_message(chat_id=OWNER_CHAT_ID, text=f"Ответ от {user_id}:\n{text}")
-
-    # Отвечаем подписчику
-    await update.message.reply_text("чет мало")
+    # Отправляем ответ подписчика тебе в личный чат
+    msg = f"Ответ от {user_name} (id: {user_id}):\n{text}"
+    await context.bot.send_message(chat_id=OWNER_CHAT_ID, text=msg)
 
 async def scheduled_check(application):
     text = get_upcoming_tournament_tomorrow()
@@ -258,6 +252,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("ranking", ranking_command))
-    # Обработчик для обычных текстовых сообщений от подписчиков
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
+
+    # Обработчик для всех текстовых сообщений (которые не команды)
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_user_response))
+
     app.run_polling()
