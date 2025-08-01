@@ -1,0 +1,1 @@
+worker: python snooker_alert_bot.py
