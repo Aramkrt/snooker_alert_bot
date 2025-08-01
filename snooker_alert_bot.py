@@ -4,17 +4,13 @@ import requests
 import schedule
 from bs4 import BeautifulSoup
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import datetime, timedelta
 import json
 import os
 
-# Получаем токен из переменных окружения (для Heroku)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 SUBSCRIBERS_FILE = 'subscribers.json'
-
-# Введи сюда свой личный chat_id (число)
-OWNER_CHAT_ID = 734782204  # <-- ЗАМЕНИ на свой chat_id
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -47,37 +43,24 @@ def get_upcoming_tournament_tomorrow():
         tomorrow = datetime.now().date() + timedelta(days=1)
 
         tables = soup.find_all('table', {'class': 'wikitable'})
-        target_table = None
         for table in tables:
-            header = table.find('tr')
-            headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            needed_headers = {'Start', 'Finish', 'Tournament'}
-            if needed_headers.issubset(set(headers)):
-                target_table = table
-                break
-
-        if not target_table:
-            return None
-
-        rows = target_table.find_all('tr')[1:]
-
-        for row in rows:
-            cols = row.find_all('td')
-            if len(cols) >= 3:
-                start_date_str = cols[0].get_text(strip=True)
-                try:
-                    start_date = datetime.strptime(start_date_str, "%d %B %Y").date()
-                except Exception:
-                    try:
-                        start_date = datetime.strptime(start_date_str, "%B %Y").date()
-                        start_date = start_date.replace(day=1)
-                    except Exception:
-                        continue
-
-                if start_date == tomorrow:
-                    tournament = cols[2].get_text(strip=True)
-                    return f"🎱 Завтра стартует чемпионат:\n🏆 {tournament}\n📅 {start_date_str}"
-
+            headers = [th.get_text(strip=True) for th in table.find('tr').find_all(['th', 'td'])]
+            if {'Start', 'Finish', 'Tournament'}.issubset(set(headers)):
+                rows = table.find_all('tr')[1:]
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 3:
+                        start_date_str = cols[0].get_text(strip=True)
+                        try:
+                            start_date = datetime.strptime(start_date_str, "%d %B %Y").date()
+                        except:
+                            try:
+                                start_date = datetime.strptime(start_date_str, "%B %Y").date().replace(day=1)
+                            except:
+                                continue
+                        if start_date == tomorrow:
+                            tournament = cols[2].get_text(strip=True)
+                            return f"🎱 Завтра стартует чемпионат:\n🏆 {tournament}\n📅 {start_date_str}"
         return None
     except Exception as e:
         return f"Ошибка при проверке турниров: {e}"
@@ -88,36 +71,48 @@ def get_schedule():
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
         tables = soup.find_all('table', {'class': 'wikitable'})
-        target_table = None
+
         for table in tables:
-            header = table.find('tr')
-            headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            needed_headers = {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score'}
-            if needed_headers.issubset(set(headers)):
-                target_table = table
-                break
+            headers = [th.get_text(strip=True) for th in table.find('tr').find_all(['th', 'td'])]
+            if {'Start', 'Finish', 'Tournament'}.issubset(set(headers)):
+                idx_start = headers.index('Start')
+                idx_finish = headers.index('Finish')
+                idx_tournament = headers.index('Tournament')
+                idx_venue = headers.index('Venue') if 'Venue' in headers else None
+                idx_winner = headers.index('Winner') if 'Winner' in headers else None
+                idx_runner_up = headers.index('Runner-up') if 'Runner-up' in headers else None
+                idx_score = headers.index('Score') if 'Score' in headers else None
 
-        if not target_table:
-            return "Не удалось найти таблицу турниров."
+                results = []
+                for row in table.find_all('tr')[1:]:
+                    cols = row.find_all('td')
+                    if len(cols) < 3:
+                        continue
 
-        rows = target_table.find_all('tr')[1:]
-        results = []
-        for row in rows:
-            cols = row.find_all('td')
-            if len(cols) >= 7:
-                start = cols[0].get_text(strip=True)
-                finish = cols[1].get_text(strip=True)
-                tournament = cols[2].get_text(strip=True)
-                venue = cols[3].get_text(strip=True)
-                winner = cols[4].get_text(strip=True)
-                runner_up = cols[5].get_text(strip=True)
-                score = cols[6].get_text(strip=True)
-                results.append(f"📅 {start} — {finish}\n🏆 {tournament}\n📍 {venue}\n🥇 Победитель: {winner}\n🥈 Проигравший: {runner_up}\n⚔️ Счёт: {score}")
+                    start = cols[idx_start].get_text(strip=True)
+                    finish = cols[idx_finish].get_text(strip=True)
+                    tournament = cols[idx_tournament].get_text(strip=True)
+                    venue = cols[idx_venue].get_text(strip=True) if idx_venue is not None and len(cols) > idx_venue else None
+                    winner = cols[idx_winner].get_text(strip=True) if idx_winner is not None and len(cols) > idx_winner else None
+                    runner_up = cols[idx_runner_up].get_text(strip=True) if idx_runner_up is not None and len(cols) > idx_runner_up else None
+                    score = cols[idx_score].get_text(strip=True) if idx_score is not None and len(cols) > idx_score else None
 
-        if not results:
-            return "Нет данных о турнирах."
+                    line = f"📅 {start} — {finish}\n🏆 {tournament}"
+                    if venue:
+                        line += f"\n📍 {venue}"
+                    if winner:
+                        line += f"\n🥇 {winner}"
+                    if runner_up:
+                        line += f"\n🥈 {runner_up}"
+                    if score:
+                        line += f"\n🎯 Счёт: {score}"
+                    results.append(line)
 
-        return "\n\n".join(results)
+                if not results:
+                    return "Нет данных о турнирах."
+                return "\n\n".join(results)
+
+        return "Не удалось найти таблицу турниров."
 
     except Exception as e:
         return f"Ошибка при получении расписания: {e}"
@@ -128,31 +123,20 @@ def get_world_ranking():
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
         tables = soup.find_all('table', {'class': 'wikitable'})
-        ranking_table = None
         for table in tables:
-            headers = [th.text.strip() for th in table.find_all('th')]
+            headers = [th.get_text(strip=True) for th in table.find_all('th')]
             if 'Points' in headers and 'Player' in headers:
-                ranking_table = table
-                break
-
-        if not ranking_table:
-            return "Не удалось найти таблицу рейтинга."
-
-        rows = ranking_table.find_all('tr')[1:]
-        results = []
-        for row in rows:
-            cols = row.find_all(['td', 'th'])
-            if len(cols) >= 3:
-                position = cols[0].text.strip()
-                player = cols[1].text.strip()
-                points = cols[2].text.strip()
-                results.append(f"{position}. {player} — {points} очков")
-
-        if not results:
-            return "Рейтинг пуст."
-
-        return "🏆 Мировой рейтинг снукера:\n\n" + "\n".join(results)
-
+                rows = table.find_all('tr')[1:]
+                results = []
+                for row in rows:
+                    cols = row.find_all(['td', 'th'])
+                    if len(cols) >= 3:
+                        pos = cols[0].text.strip()
+                        player = cols[1].text.strip()
+                        points = cols[2].text.strip()
+                        results.append(f"{pos}. {player} — {points} очков")
+                return "🏆 Мировой рейтинг снукера:\n\n" + "\n".join(results[:50])
+        return "Не удалось найти таблицу рейтинга."
     except Exception as e:
         return f"Ошибка при получении рейтинга: {e}"
 
@@ -206,18 +190,8 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for part in parts:
             await update.message.reply_text(part)
 
-    # Сразу после рейтинга спрашиваем:
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
-
-async def handle_user_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_chat.id
-    user_name = update.effective_user.full_name
-    text = update.message.text
-
-    # Отправляем ответ подписчика тебе в личный чат
-    msg = f"Ответ от {user_name} (id: {user_id}):\n{text}"
-    await context.bot.send_message(chat_id=OWNER_CHAT_ID, text=msg)
 
 async def scheduled_check(application):
     text = get_upcoming_tournament_tomorrow()
@@ -246,14 +220,9 @@ async def on_startup(app):
 if __name__ == '__main__':
     import nest_asyncio
     nest_asyncio.apply()
-
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(on_startup).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("ranking", ranking_command))
-
-    # Обработчик для всех текстовых сообщений (которые не команды)
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_user_response))
-
     app.run_polling()
