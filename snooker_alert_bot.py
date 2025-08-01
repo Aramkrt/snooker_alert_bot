@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 import json
 import os
 
-# Получаем токен из переменных окружения (для Heroku)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 SUBSCRIBERS_FILE = 'subscribers.json'
 
@@ -105,7 +104,20 @@ def get_schedule():
                 start = cols[0].get_text(strip=True)
                 finish = cols[1].get_text(strip=True)
                 tournament = cols[2].get_text(strip=True)
-                results.append(f"📅 {start} — {finish}\n🏆 {tournament}")
+
+                winner = cols[3].get_text(strip=True) if len(cols) > 3 else ""
+                score = cols[4].get_text(strip=True) if len(cols) > 4 else ""
+                runner_up = cols[5].get_text(strip=True) if len(cols) > 5 else ""
+
+                extra = ""
+                if winner:
+                    extra += f"\n👑 {winner}"
+                if score:
+                    extra += f" {score}"
+                if runner_up:
+                    extra += f" 🥈 {runner_up}"
+
+                results.append(f"📅 {start} — {finish}\n🏆 {tournament}{extra}")
 
         if not results:
             return "Нет данных о турнирах."
@@ -199,7 +211,6 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for part in parts:
             await update.message.reply_text(part)
 
-    # Сразу после рейтинга спрашиваем:
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
