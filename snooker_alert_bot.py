@@ -202,6 +202,11 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts.append(current)
         for part in parts:
             await update.message.reply_text(part)
+
+    # Ждем 30 секунд, потом отправляем дополнительное сообщение
+    await asyncio.sleep(30)
+    await update.message.reply_text("а сколько твой рейтинг?)")
+
     await send_commands_menu(update)
 
 async def scheduled_check(application):
