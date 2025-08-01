@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 import json
 import os
 
-TELEGRAM_TOKEN = '8380549936:AAGUrcOsOoe0VtLln1fQashF8JR0P_zVxM8'
+# Получаем токен из переменных окружения (для Heroku)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
 SUBSCRIBERS_FILE = 'subscribers.json'
 
 logging.basicConfig(
@@ -217,16 +219,11 @@ async def scheduled_check(application):
         except Exception as e:
             logging.warning(f"Ошибка отправки {chat_id}: {e}")
 
-# ---- ВРЕМЕННЫЙ ПЛАНИРОВЩИК ДЛЯ ТЕСТА (уведомление через 2 минуты) ----
 async def scheduler(application):
-    # Ждём 2 минуты и запускаем уведомление один раз
-    await asyncio.sleep(120)
-    await scheduled_check(application)
-
-    # После этого бот остаётся жив, чтобы не закрываться
+    schedule.every().day.at("21:00").do(lambda: asyncio.create_task(scheduled_check(application)))
     while True:
-        await asyncio.sleep(3600)
-# ----------------------------------------------------------------------
+        schedule.run_pending()
+        await asyncio.sleep(60)
 
 async def on_startup(app):
     asyncio.create_task(scheduler(app))
