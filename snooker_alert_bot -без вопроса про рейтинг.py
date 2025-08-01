@@ -11,6 +11,7 @@ import os
 
 # Получаем токен из переменных окружения (для Heroku)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
 SUBSCRIBERS_FILE = 'subscribers.json'
 
 logging.basicConfig(
@@ -34,13 +35,14 @@ async def send_commands_menu(update: Update):
         ["/schedule", "/ranking"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text(" ", reply_markup=reply_markup)
+    await update.message.reply_text("Выберите команду:", reply_markup=reply_markup)
 
 def get_upcoming_tournament_tomorrow():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
+
         tomorrow = datetime.now().date() + timedelta(days=1)
 
         tables = soup.find_all('table', {'class': 'wikitable'})
@@ -84,7 +86,9 @@ def get_schedule():
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
+
         tables = soup.find_all('table', {'class': 'wikitable'})
+
         target_table = None
         for table in tables:
             header = table.find('tr')
@@ -120,6 +124,7 @@ def get_world_ranking():
         url = "https://en.wikipedia.org/wiki/Snooker_world_rankings"
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
+
         tables = soup.find_all('table', {'class': 'wikitable'})
         ranking_table = None
         for table in tables:
@@ -127,11 +132,10 @@ def get_world_ranking():
             if 'Points' in headers and 'Player' in headers:
                 ranking_table = table
                 break
-
         if not ranking_table:
             return "Не удалось найти таблицу рейтинга."
 
-        rows = ranking_table.find_all('tr')[1:]
+        rows = ranking_table.find_all('tr')[1:]  # все игроки
         results = []
         for row in rows:
             cols = row.find_all(['td', 'th'])
@@ -198,9 +202,6 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts.append(current)
         for part in parts:
             await update.message.reply_text(part)
-
-    # Сразу после рейтинга спрашиваем:
-    await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
 async def scheduled_check(application):
