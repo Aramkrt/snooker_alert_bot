@@ -13,7 +13,7 @@ import os
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # Вставь сюда свой настоящий chat_id (число), чтобы получать ответы подписчиков
-OWNER_CHAT_ID = 123456789
+OWNER_CHAT_ID = 734782204
 
 SUBSCRIBERS_FILE = 'subscribers.json'
 
