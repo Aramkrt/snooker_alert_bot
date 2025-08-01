@@ -35,8 +35,7 @@ async def send_commands_menu(update: Update):
         ["/schedule", "/ranking"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    # Отправляем пустое сообщение с пробелом, чтобы клавиатура появилась без текста
-    await update.message.reply_text(" ", reply_markup=reply_markup)
+    await update.message.reply_text("📋 Доступные команды:", reply_markup=reply_markup)
 
 def get_upcoming_tournament_tomorrow():
     try:
@@ -207,23 +206,29 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
-    user_name = update.effective_user.full_name or "Неизвестный"
+    user = update.effective_user
     text = update.message.text
 
-    # Логируем в файл с именем
+    # Формируем имя пользователя
+    if user.username:
+        user_name = f"@{user.username}"
+    else:
+        user_name = user.first_name or "Unknown"
+        if user.last_name:
+            user_name += f" {user.last_name}"
+
+    # Логируем ответ в файл с именем пользователя
     with open('user_replies.txt', 'a', encoding='utf-8') as f:
         f.write(f"{user_id} ({user_name}): {text}\n")
 
-    # Отправляем владельцу с именем подписчика
+    # Отправляем владельцу бота сообщение с именем и id пользователя
     await context.bot.send_message(
         chat_id=OWNER_CHAT_ID,
-        text=f"Ответ от {user_name} (ID {user_id}):\n{text}"
+        text=f"Ответ от {user_name} (id: {user_id}):\n{text}"
     )
 
     # Отвечаем подписчику
     await update.message.reply_text("чет мало")
-
-    # Отправляем меню команд
     await send_commands_menu(update)
 
 async def scheduled_check(application):
