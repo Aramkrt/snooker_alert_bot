@@ -13,8 +13,8 @@ import os
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 SUBSCRIBERS_FILE = 'subscribers.json'
 
-# Твой Telegram ID (замени на свой настоящий ID)
-ADMIN_ID = 123456789
+# Введи сюда свой личный chat_id (число)
+OWNER_CHAT_ID = 734782204  # <-- ЗАМЕНИ на свой chat_id
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -37,7 +37,7 @@ async def send_commands_menu(update: Update):
         ["/schedule", "/ranking"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text(" ", reply_markup=reply_markup)  # пустая строка вместо "Выберите команду"
+    await update.message.reply_text(" ", reply_markup=reply_markup)
 
 def get_upcoming_tournament_tomorrow():
     try:
@@ -112,14 +112,7 @@ def get_schedule():
                 winner = cols[4].get_text(strip=True)
                 runner_up = cols[5].get_text(strip=True)
                 score = cols[6].get_text(strip=True)
-                results.append(
-                    f"📅 {start} — {finish}\n"
-                    f"🏆 {tournament}\n"
-                    f"📍 {venue}\n"
-                    f"🥇 Победитель: {winner}\n"
-                    f"🥈 Проигравший: {runner_up}\n"
-                    f"📊 Счёт: {score}"
-                )
+                results.append(f"📅 {start} — {finish}\n🏆 {tournament}\n📍 {venue}\n🥇 Победитель: {winner}\n🥈 Проигравший: {runner_up}\n⚔️ Счёт: {score}")
 
         if not results:
             return "Нет данных о турнирах."
@@ -217,30 +210,14 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    text = update.message.text.strip()
+async def handle_user_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_chat.id
+    user_name = update.effective_user.full_name
+    text = update.message.text
 
-    if not text or text.startswith("/"):
-        return  # пропускаем пустые или командные сообщения
-
-    # Ответ пользователю
-    await update.message.reply_text("😎 Спасибо, учтём твой рейтинг!")
-
-    # Лог для админа (сохраняем в файл)
-    log_entry = f"{datetime.now().isoformat()} | {user.first_name} ({user.id}): {text}\n"
-    with open("ratings_log.txt", "a", encoding="utf-8") as f:
-        f.write(log_entry)
-
-    # Отправка админу копии
-    if user.id != ADMIN_ID:
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"📩 Новый рейтинг от {user.first_name} ({user.id}):\n{text}"
-            )
-        except Exception as e:
-            logging.error(f"Не удалось отправить админу лог: {e}")
+    # Отправляем ответ подписчика тебе в личный чат
+    msg = f"Ответ от {user_name} (id: {user_id}):\n{text}"
+    await context.bot.send_message(chat_id=OWNER_CHAT_ID, text=msg)
 
 async def scheduled_check(application):
     text = get_upcoming_tournament_tomorrow()
@@ -275,5 +252,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("ranking", ranking_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Обработчик для всех текстовых сообщений (которые не команды)
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_user_response))
+
     app.run_polling()
