@@ -38,7 +38,6 @@ async def send_commands_menu(update: Update):
     await update.message.reply_text("Выберите команду:", reply_markup=reply_markup)
 
 def get_upcoming_tournament_tomorrow():
-    # Эта функция сейчас не используется для теста, оставляю без изменений
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
@@ -205,23 +204,29 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(part)
     await send_commands_menu(update)
 
-# Новый тестовый уведомляющий таск — отправит сообщение через 1 минуту после запуска
-async def test_notify_after_delay(application, delay_seconds=60):
-    await asyncio.sleep(delay_seconds)
+async def scheduled_check(application):
+    text = get_upcoming_tournament_tomorrow()
+    if not text:
+        return
+    if text.startswith("Ошибка"):
+        logging.warning(text)
+        return
     subscribers = load_subscribers()
-    text = "✅ Тестовое уведомление: бот работает и отправляет сообщения!"
     for chat_id in subscribers:
         try:
             await application.bot.send_message(chat_id=chat_id, text=text)
-            logging.info(f"Отправлено тестовое уведомление {chat_id}")
+            logging.info(f"Отправлено уведомление {chat_id}")
         except Exception as e:
-            logging.warning(f"Ошибка при отправке тестового уведомления {chat_id}: {e}")
+            logging.warning(f"Ошибка отправки {chat_id}: {e}")
+
+async def scheduler(application):
+    schedule.every().day.at("21:00").do(lambda: asyncio.create_task(scheduled_check(application)))
+    while True:
+        schedule.run_pending()
+        await asyncio.sleep(60)
 
 async def on_startup(app):
-    # Запускаем тестовое уведомление через 60 секунд после старта
-    asyncio.create_task(test_notify_after_delay(app, 60))
-    # Если хочешь, можно добавить обычный scheduler, но пока убрал
-    # asyncio.create_task(scheduler(app))
+    asyncio.create_task(scheduler(app))
 
 if __name__ == '__main__':
     import nest_asyncio
