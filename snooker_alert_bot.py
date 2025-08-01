@@ -11,10 +11,7 @@ import os
 
 # Получаем токен из переменных окружения (для Heroku)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-# Вставь сюда свой настоящий chat_id (число), чтобы получать ответы подписчиков
 OWNER_CHAT_ID = 734782204
-
 SUBSCRIBERS_FILE = 'subscribers.json'
 
 logging.basicConfig(
@@ -38,7 +35,7 @@ async def send_commands_menu(update: Update):
         ["/schedule", "/ranking"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text(" ", reply_markup=reply_markup)
+    await update.message.reply_text("📋 Доступные команды:", reply_markup=reply_markup)
 
 def get_upcoming_tournament_tomorrow():
     try:
@@ -52,8 +49,7 @@ def get_upcoming_tournament_tomorrow():
         for table in tables:
             header = table.find('tr')
             headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            needed_headers = {'Start', 'Finish', 'Tournament'}
-            if needed_headers.issubset(set(headers)):
+            if {'Start', 'Finish', 'Tournament'}.issubset(set(headers)):
                 target_table = table
                 break
 
@@ -61,7 +57,6 @@ def get_upcoming_tournament_tomorrow():
             return None
 
         rows = target_table.find_all('tr')[1:]
-
         for row in rows:
             cols = row.find_all('td')
             if len(cols) >= 3:
@@ -93,8 +88,7 @@ def get_schedule():
         for table in tables:
             header = table.find('tr')
             headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            needed_headers = {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score'}
-            if needed_headers.issubset(set(headers)):
+            if {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score'}.issubset(set(headers)):
                 target_table = table
                 break
 
@@ -207,7 +201,6 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for part in parts:
             await update.message.reply_text(part)
 
-    # Сразу после рейтинга спрашиваем:
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
@@ -215,15 +208,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
     text = update.message.text
 
-    # Сохраняем в файл (если нужно)
     with open('user_replies.txt', 'a', encoding='utf-8') as f:
         f.write(f"{user_id}: {text}\n")
 
-    # Отправляем владельцу бота в личку
     await context.bot.send_message(chat_id=OWNER_CHAT_ID, text=f"Ответ от {user_id}:\n{text}")
-
-    # Отвечаем подписчику
     await update.message.reply_text("чет мало")
+    await send_commands_menu(update)
 
 async def scheduled_check(application):
     text = get_upcoming_tournament_tomorrow()
@@ -258,6 +248,5 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("ranking", ranking_command))
-    # Обработчик для обычных текстовых сообщений от подписчиков
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
     app.run_polling()
