@@ -243,17 +243,17 @@ def get_world_ranking():
 # === Команды бота ===
 async def send_commands_menu(update: Update):
     keyboard = [
-        ["/start", "/unsubscribe"],
-        ["/schedule", "/ranking"],
-        ["/next"]
+        ["/Подписаться", "/Отписаться"],
+        ["/Расписание сезона", "/Рейтинг снукеристов"],
+        ["/блмжайщий турнир"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text("📋 Команды:", reply_markup=reply_markup)
+    await update.message.reply_text("📋 что интересует?", reply_markup=reply_markup)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
     subscribers = load_subscribers()
-    message_text = ("⏰ Уведомления о турнирах будут приходить за день до начала, примерно в 21:00.\n\n")
+    message_text = ("⏰ Уведомления о турнирах будут приходить за день до начала, в 21:00 по GMT+3 (московскому времени)\n\n")
     if user_id not in subscribers:
         subscribers.add(user_id)
         save_subscribers(subscribers)
@@ -274,7 +274,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_commands_menu(update)
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ Получаю расписание чемпионатов...")
+    await update.message.reply_text("⏳ Получаю расписание чемпионатов текущего сезона...")
     data = get_schedule()
     if len(data) > 3900:
         data = data[:3900] + "\n\n...и ещё турниры доступны на Википедии."
@@ -372,11 +372,11 @@ if __name__ == '__main__':
     nest_asyncio.apply()
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("unsubscribe", unsubscribe))
-    app.add_handler(CommandHandler("schedule", schedule_command))
-    app.add_handler(CommandHandler("ranking", ranking_command))
-    app.add_handler(CommandHandler("next", next_tournament_command))
+    app.add_handler(CommandHandler("Подписаться", start))
+    app.add_handler(CommandHandler("Отписаться", unsubscribe))
+    app.add_handler(CommandHandler("Расписание сезона", schedule_command))
+    app.add_handler(CommandHandler("Рейтинг снукеристов", ranking_command))
+    app.add_handler(CommandHandler("блмжайщий турнир", next_tournament_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
     # Запуск ежедневного задания в 21:00 по Москве
