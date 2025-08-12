@@ -9,6 +9,7 @@ import os
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from telegram import Update, ReplyKeyboardMarkup
 import sys
+
 print("Python version:", sys.version)
 
 # === Конфигурация ===
@@ -101,7 +102,7 @@ def get_next_tournament_info():
     days_left = (next_tournament['start'] - today).days
     return f"До следующего чемпионата «{next_tournament['name']}» осталось {days_left} дней.\nДата начала: {next_tournament['start'].strftime('%d %B %Y')}"
 
-# === Остальной код команд и парсинга расписания/рейтинга оставляем без изменений ===
+# === Получение расписания турниров ===
 def get_schedule():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
@@ -127,11 +128,19 @@ def get_schedule():
                 start = cols[0].get_text(strip=True)
                 finish = cols[1].get_text(strip=True)
                 tournament = cols[2].get_text(strip=True)
-                venue = cols[3].get_text(strip=True)
+                # ✅ Исправлено — гарантированный пробел между элементами
+                venue = cols[3].get_text(separator=" ", strip=True)
                 winner = cols[4].get_text(strip=True)
                 runner_up = cols[6].get_text(strip=True)
                 score = cols[5].get_text(strip=True)
-                results.append(f"📅 {start} — {finish}\n🏆 {tournament}\n📍 {venue}\n🥇 Победитель: {winner}\n🥈 Финалист: {runner_up}\n⚔️ Счёт финала: {score}")
+                results.append(
+                    f"📅 {start} — {finish}\n"
+                    f"🏆 {tournament}\n"
+                    f"📍 {venue}\n"
+                    f"🥇 Победитель: {winner}\n"
+                    f"🥈 Финалист: {runner_up}\n"
+                    f"⚔️ Счёт финала: {score}"
+                )
 
         if not results:
             return "Нет данных о турнирах."
@@ -140,6 +149,7 @@ def get_schedule():
     except Exception as e:
         return f"Ошибка при получении расписания: {e}"
 
+# === Получение рейтинга ===
 def get_world_ranking():
     try:
         url = "https://en.wikipedia.org/wiki/Snooker_world_rankings"
@@ -257,7 +267,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("мы все учтем, спасибо!")
     await send_commands_menu(update)
 
-# === Ежедневная задача рассылки уведомлений ===
+# === Ежедневная задача ===
 async def daily_notification(context: ContextTypes.DEFAULT_TYPE):
     try:
         text = get_upcoming_tournament_tomorrow()
@@ -286,9 +296,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("ranking", ranking_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
-    # Запуск ежедневной задачи в 21:00 по Москве
     from datetime import time as dt_time
     app.job_queue.run_daily(daily_notification, time=dt_time(21, 0, tzinfo=LOCAL_TZ))
 
-    # Для Render можно запускать в фоне, или оставить для веб-сервиса:
     app.run_polling()
