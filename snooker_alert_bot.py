@@ -1,24 +1,26 @@
 import logging
 import asyncio
 import requests
-import schedule
 from bs4 import BeautifulSoup
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from datetime import datetime, timedelta
+import pytz
 import json
 import os
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, ReplyKeyboardMarkup
 
-# Получаем токен из переменных окружения (для Heroku)
+# === Конфигурация ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OWNER_CHAT_ID = 734782204
 SUBSCRIBERS_FILE = 'subscribers.json'
+LOCAL_TZ = pytz.timezone("Europe/Moscow")  # часовой пояс
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
+# === Подписчики ===
 def load_subscribers():
     if os.path.exists(SUBSCRIBERS_FILE):
         with open(SUBSCRIBERS_FILE, 'r') as f:
@@ -29,20 +31,26 @@ def save_subscribers(subscribers):
     with open(SUBSCRIBERS_FILE, 'w') as f:
         json.dump(list(subscribers), f)
 
-async def send_commands_menu(update: Update):
-    keyboard = [
-        ["/start", "/unsubscribe"],
-        ["/schedule", "/ranking"],
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text("📋 Доступные команды:", reply_markup=reply_markup)
+# === Парсинг дат ===
+def parse_date(date_str):
+    """Парсинг даты даже если диапазон."""
+    try:
+        date_str = date_str.split("–")[0].split("-")[0].strip()
+        return datetime.strptime(date_str, "%d %B %Y").date()
+    except Exception:
+        try:
+            dt = datetime.strptime(date_str, "%B %Y")
+            return dt.replace(day=1).date()
+        except Exception:
+            return None
 
+# === Получение турниров ===
 def get_upcoming_tournament_tomorrow():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
-        tomorrow = datetime.now().date() + timedelta(days=1)
+        tomorrow = datetime.now(LOCAL_TZ).date() + timedelta(days=1)
 
         tables = soup.find_all('table', {'class': 'wikitable'})
         target_table = None
@@ -60,23 +68,15 @@ def get_upcoming_tournament_tomorrow():
         for row in rows:
             cols = row.find_all('td')
             if len(cols) >= 3:
-                start_date_str = cols[0].get_text(strip=True)
-                try:
-                    start_date = datetime.strptime(start_date_str, "%d %B %Y").date()
-                except Exception:
-                    try:
-                        start_date = datetime.strptime(start_date_str, "%B %Y").date()
-                        start_date = start_date.replace(day=1)
-                    except Exception:
-                        continue
-
+                start_date = parse_date(cols[0].get_text(strip=True))
                 if start_date == tomorrow:
                     tournament = cols[2].get_text(strip=True)
-                    return f"🎱 Завтра стартует чемпионат:\n🏆 {tournament}\n📅 {start_date_str}"
+                    return f"🎱 Завтра стартует чемпионат:\n🏆 {tournament}\n📅 {cols[0].get_text(strip=True)}"
 
         return None
     except Exception as e:
-        return f"Ошибка при проверке турниров: {e}"
+        logging.error(f"Ошибка парсинга турнира: {e}")
+        return None
 
 def get_schedule():
     try:
@@ -113,7 +113,6 @@ def get_schedule():
             return "Нет данных о турнирах."
 
         return "\n\n".join(results)
-
     except Exception as e:
         return f"Ошибка при получении расписания: {e}"
 
@@ -147,9 +146,17 @@ def get_world_ranking():
             return "Рейтинг пуст."
 
         return "🏆 Мировой рейтинг снукера:\n\n" + "\n".join(results)
-
     except Exception as e:
         return f"Ошибка при получении рейтинга: {e}"
+
+# === Команды бота ===
+async def send_commands_menu(update: Update):
+    keyboard = [
+        ["/start", "/unsubscribe"],
+        ["/schedule", "/ranking"],
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+    await update.message.reply_text("📋 Доступные команды:", reply_markup=reply_markup)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
@@ -200,7 +207,6 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts.append(current)
         for part in parts:
             await update.message.reply_text(part)
-
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
@@ -209,7 +215,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text
 
-    # Формируем имя пользователя
     if user.username:
         user_name = f"@{user.username}"
     else:
@@ -217,26 +222,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.last_name:
             user_name += f" {user.last_name}"
 
-    # Логируем ответ в файл с именем пользователя
     with open('user_replies.txt', 'a', encoding='utf-8') as f:
         f.write(f"{user_id} ({user_name}): {text}\n")
 
-    # Отправляем владельцу бота сообщение с именем и id пользователя
     await context.bot.send_message(
         chat_id=OWNER_CHAT_ID,
         text=f"Ответ от {user_name} (id: {user_id}):\n{text}"
     )
 
-    # Отвечаем подписчику
     await update.message.reply_text("чет мало")
     await send_commands_menu(update)
 
+# === Планировщик ===
 async def scheduled_check(application):
     text = get_upcoming_tournament_tomorrow()
     if not text:
-        return
-    if text.startswith("Ошибка"):
-        logging.warning(text)
         return
     subscribers = load_subscribers()
     for chat_id in subscribers:
@@ -247,14 +247,20 @@ async def scheduled_check(application):
             logging.warning(f"Ошибка отправки {chat_id}: {e}")
 
 async def scheduler(application):
-    schedule.every().day.at("21:00").do(lambda: asyncio.create_task(scheduled_check(application)))
+    sent_today = False
     while True:
-        schedule.run_pending()
-        await asyncio.sleep(60)
+        now = datetime.now(LOCAL_TZ)
+        if now.hour == 21 and not sent_today:
+            await scheduled_check(application)
+            sent_today = True
+        elif now.hour != 21:
+            sent_today = False
+        await asyncio.sleep(300)
 
 async def on_startup(app):
     asyncio.create_task(scheduler(app))
 
+# === Запуск бота ===
 if __name__ == '__main__':
     import nest_asyncio
     nest_asyncio.apply()
