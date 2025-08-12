@@ -24,31 +24,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# === Конвертация трехбуквенных кодов стран (ISO 3166-1 alpha-3) в двухбуквенные (ISO 3166-1 alpha-2) ===
-# Минимальный словарь для примера (дополни при необходимости)
-alpha3_to_alpha2 = {
-    'ENG': 'GB',  # Англия — GB (потому что флаг Великобритании)
-    'SCO': 'GB',  # Шотландия
-    'WAL': 'GB',  # Уэльс
-    'NIR': 'GB',  # Северная Ирландия
-    'CHN': 'CN',
-    'AUS': 'AU',
-    'BEL': 'BE',
-    'IRL': 'IE',
-    'FRA': 'FR',
-    'GER': 'DE',
-    'NZL': 'NZ',
-    'RSA': 'ZA',
-    'MAL': 'MY',
-    'RUS': 'RU',
-    # Добавь по необходимости
-}
-
-def alpha2_to_emoji(alpha2):
-    # Преобразует alpha2 код в emoji флага
-    OFFSET = 127397
-    return ''.join(chr(ord(c) + OFFSET) for c in alpha2.upper())
-
 # === Подписчики ===
 def load_subscribers():
     if os.path.exists(SUBSCRIBERS_FILE):
@@ -83,42 +58,35 @@ def parse_start_finish_date(date_str):
     except Exception:
         return None
 
-# === Получение словаря ссылок из сносок ===
-def parse_ref_links(soup):
-    ref_links = {}
-    # Обычно сноски — это <li id="cite_note-xyz"> в ol.references
-    for li in soup.find_all("li", id=True):
-        li_id = li['id']
-        a = li.find('a', href=True)
-        if a:
-            href = a['href']
-            if href.startswith('http'):
-                ref_links[li_id] = href
-            else:
-                # Относительная ссылка, добавляем базовый url Википедии
-                ref_links[li_id] = 'https://en.wikipedia.org' + href
-    return ref_links
-
-# === Получение турниров с флагами и ссылками ===
+# === Получение расписания турниров (возвращает список с полной информацией) ===
 def get_schedule_tournaments():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        ref_links = parse_ref_links(soup)
-
         tables = soup.find_all('table', {'class': 'wikitable'})
         target_table = None
         for table in tables:
             header = table.find('tr')
             headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            if {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score', 'Ref.'}.issubset(set(headers)):
+            if {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score', 'Ref'}.issubset(set(headers)):
                 target_table = table
                 break
 
         if not target_table:
             return []
+
+        # Словарь для ссылок из колонки Ref
+        ref_links = {}
+        # Сначала собираем все ссылки из сносок под таблицей (где <ol class="references">)
+        refs_section = soup.find('ol', {'class': 'references'})
+        if refs_section:
+            for li in refs_section.find_all('li'):
+                if 'id' in li.attrs:
+                    ref_id = li['id']
+                    a = li.find('a', href=True)
+                    if a:
+                        ref_links[ref_id] = a['href']
 
         rows = target_table.find_all('tr')[1:]
         tournaments = []
@@ -129,46 +97,10 @@ def get_schedule_tournaments():
                 finish_str = cols[1].get_text(strip=True)
                 tournament = cols[2].get_text(strip=True)
                 venue = cols[3].get_text(separator=" ", strip=True)
-
-                # Парсим победителя и флаг
-                winner_cell = cols[4]
-                winner_name = winner_cell.get_text(strip=True)
-                winner_flag_emoji = ''
-                winner_flag_span = winner_cell.find('span', class_='flagicon')
-                if winner_flag_span:
-                    img = winner_flag_span.find('img')
-                    if img and 'alt' in img.attrs:
-                        alt_code = img['alt'].strip().upper()
-                        alpha2 = alpha3_to_alpha2.get(alt_code, '')
-                        if alpha2:
-                            winner_flag_emoji = alpha2_to_emoji(alpha2)
-
-                # Парсим финалиста и флаг
-                runner_cell = cols[6]
-                runner_name = runner_cell.get_text(strip=True)
-                runner_flag_emoji = ''
-                runner_flag_span = runner_cell.find('span', class_='flagicon')
-                if runner_flag_span:
-                    img = runner_flag_span.find('img')
-                    if img and 'alt' in img.attrs:
-                        alt_code = img['alt'].strip().upper()
-                        alpha2 = alpha3_to_alpha2.get(alt_code, '')
-                        if alpha2:
-                            runner_flag_emoji = alpha2_to_emoji(alpha2)
-
+                winner = cols[4].get_text(strip=True)
                 score = cols[5].get_text(strip=True)
-
-                # Парсим ссылки из Ref.
+                runner_up = cols[6].get_text(strip=True)
                 ref_cell = cols[7]
-                ref_links_list = []
-                for sup in ref_cell.find_all('sup'):
-                    a = sup.find('a', href=True)
-                    if a:
-                        href_id = a['href'].lstrip('#')
-                        if href_id in ref_links:
-                            ref_links_list.append(ref_links[href_id])
-
-                ref_links_str = ", ".join(ref_links_list) if ref_links_list else ""
 
                 start_date = parse_start_finish_date(start_str)
                 finish_date = parse_start_finish_date(finish_str)
@@ -176,17 +108,31 @@ def get_schedule_tournaments():
                 if start_date is None:
                     continue
 
+                # Ищем в ячейке Ref все ссылки (их может быть несколько)
+                ref_links_list = []
+                for a in ref_cell.find_all('a', href=True):
+                    href = a['href']
+                    if href.startswith("#"):  # это якорь сносок
+                        href_id = href.lstrip("#")
+                        # Формируем полный URL с якорем
+                        full_link = f"https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season#{href_id}"
+                        ref_links_list.append(full_link)
+                    elif href.startswith("http"):
+                        ref_links_list.append(href)
+
+                ref_links_str = "\n".join(ref_links_list) if ref_links_list else "нет ссылки"
+
                 tournaments.append({
                     'start': start_date,
                     'finish': finish_date,
                     'tournament': tournament,
                     'venue': venue,
-                    'winner': f"{winner_flag_emoji} {winner_name}" if winner_flag_emoji else winner_name,
-                    'runner_up': f"{runner_flag_emoji} {runner_name}" if runner_flag_emoji else runner_name,
+                    'winner': winner,
+                    'runner_up': runner_up,
                     'score': score,
-                    'ref_links': ref_links_str,
                     'start_str': start_str,
                     'finish_str': finish_str,
+                    'ref_links': ref_links_str
                 })
 
         tournaments.sort(key=lambda x: x['start'])
@@ -215,21 +161,15 @@ def get_schedule():
 
         results = []
         for t in tournaments:
-            s = (
+            results.append(
                 f"📅 {t['start_str']} — {t['finish_str']}\n"
                 f"🏆 {t['tournament']}\n"
                 f"📍 {t['venue']}\n"
                 f"🥇 Победитель: {t['winner']}\n"
                 f"🥈 Финалист: {t['runner_up']}\n"
-                f"⚔️ Счёт финала: {t['score']}"
+                f"⚔️ Счёт финала: {t['score']}\n"
+                f"🔗 Ссылка:\n{t['ref_links']}"
             )
-            if t.get('ref_links'):
-                # Формируем кликаемую ссылку с markdown-ссылкой
-                # если несколько ссылок — берём первую
-                first_link = t['ref_links'].split(", ")[0]
-                s += f"\n🔗 [Ссылка на источник]({first_link})"
-            results.append(s)
-
         return "\n\n".join(results)
     except Exception as e:
         return f"Ошибка при получении расписания: {e}"
@@ -330,7 +270,7 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_schedule()
     if len(data) > 3900:
         data = data[:3900] + "\n\n...и ещё турниры доступны на Википедии."
-    await update.message.reply_text(data, parse_mode="Markdown")
+    await update.message.reply_text(data)
     await send_commands_menu(update)
 
 async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
