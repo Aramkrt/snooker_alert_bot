@@ -95,12 +95,19 @@ def get_upcoming_tournament_tomorrow():
 def get_next_tournament_info():
     tournaments = get_tournaments()
     today = datetime.now(LOCAL_TZ).date()
-    future_tournaments = [t for t in tournaments if t['start'] > today]
+    future_tournaments = [t for t in tournaments if t['start'] >= today]
     if not future_tournaments:
         return "Пока нет запланированных турниров."
     next_tournament = min(future_tournaments, key=lambda x: x['start'])
     days_left = (next_tournament['start'] - today).days
-    return f"До следующего чемпионата «{next_tournament['name']}» осталось {days_left} дней.\nДата начала: {next_tournament['start'].strftime('%d %B %Y')}"
+
+    if days_left == 0:
+        return f"🎱 Сегодня стартует чемпионат:\n🏆 {next_tournament['name']}\n📅 {next_tournament['start'].strftime('%d %B %Y')}"
+    elif days_left == 1:
+        return f"🎱 Завтра стартует чемпионат:\n🏆 {next_tournament['name']}\n📅 {next_tournament['start'].strftime('%d %B %Y')}"
+    else:
+        return (f"До следующего чемпионата «{next_tournament['name']}» осталось {days_left} дней.\n"
+                f"Дата начала: {next_tournament['start'].strftime('%d %B %Y')}")
 
 # === Получение расписания турниров ===
 def get_schedule():
@@ -128,7 +135,6 @@ def get_schedule():
                 start = cols[0].get_text(strip=True)
                 finish = cols[1].get_text(strip=True)
                 tournament = cols[2].get_text(strip=True)
-                # ✅ Исправлено — гарантированный пробел между элементами
                 venue = cols[3].get_text(separator=" ", strip=True)
                 winner = cols[4].get_text(strip=True)
                 runner_up = cols[6].get_text(strip=True)
@@ -188,6 +194,7 @@ async def send_commands_menu(update: Update):
     keyboard = [
         ["/start", "/unsubscribe"],
         ["/schedule", "/ranking"],
+        ["/next"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
     await update.message.reply_text("📋 Команды:", reply_markup=reply_markup)
@@ -244,6 +251,11 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
+async def next_tournament_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = get_next_tournament_info()
+    await update.message.reply_text(data)
+    await send_commands_menu(update)
+
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
     user = update.effective_user
@@ -294,6 +306,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("ranking", ranking_command))
+    app.add_handler(CommandHandler("next", next_tournament_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
     from datetime import time as dt_time
