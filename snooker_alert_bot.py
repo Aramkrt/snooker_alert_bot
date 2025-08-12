@@ -230,7 +230,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=f"Ответ от {user_name} (id: {user_id}):\n{text}"
     )
 
-    await update.message.reply_text("чет мало")
+    await update.message.reply_text("мы все учтем, спасибо!")
     await send_commands_menu(update)
 
 # === Планировщик ===
