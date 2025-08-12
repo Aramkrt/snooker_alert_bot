@@ -244,8 +244,8 @@ def get_world_ranking():
 async def send_commands_menu(update: Update):
     keyboard = [
         ["/start", "/unsubscribe"],
-        ["/Current season schedule", "/players' ranking"],
-        ["/upcoming tournament"]
+        ["/current_season_schedule", "/players'_ranking"],
+        ["/upcoming_tournament"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
     await update.message.reply_text("📋 что интересует?", reply_markup=reply_markup)
@@ -374,9 +374,9 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
-    app.add_handler(CommandHandler("Current season schedule", schedule_command))
-    app.add_handler(CommandHandler("players ranking", ranking_command))
-    app.add_handler(CommandHandler("upcoming tournament", next_tournament_command))
+    app.add_handler(CommandHandler("current_season_schedule", schedule_command))
+    app.add_handler(CommandHandler("players'_ranking", ranking_command))
+    app.add_handler(CommandHandler("upcoming_tournament", next_tournament_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
     # Запуск ежедневного задания в 21:00 по Москве
