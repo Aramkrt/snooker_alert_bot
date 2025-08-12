@@ -243,9 +243,9 @@ def get_world_ranking():
 # === Команды бота ===
 async def send_commands_menu(update: Update):
     keyboard = [
-        ["/Подписаться", "/Отписаться"],
-        ["/Расписание сезона", "/Рейтинг снукеристов"],
-        ["/блмжайщий турнир"]
+        ["/start", "/unsubscribe"],
+        ["/Current season schedule", "/players' ranking"],
+        ["/upcoming tournament"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
     await update.message.reply_text("📋 что интересует?", reply_markup=reply_markup)
@@ -372,11 +372,11 @@ if __name__ == '__main__':
     nest_asyncio.apply()
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("Подписаться", start))
-    app.add_handler(CommandHandler("Отписаться", unsubscribe))
-    app.add_handler(CommandHandler("Расписание сезона", schedule_command))
-    app.add_handler(CommandHandler("Рейтинг снукеристов", ranking_command))
-    app.add_handler(CommandHandler("блмжайщий турнир", next_tournament_command))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe))
+    app.add_handler(CommandHandler("Current season schedule", schedule_command))
+    app.add_handler(CommandHandler("players ranking", ranking_command))
+    app.add_handler(CommandHandler("upcoming tournament", next_tournament_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
     # Запуск ежедневного задания в 21:00 по Москве
