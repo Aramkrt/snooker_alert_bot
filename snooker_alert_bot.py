@@ -95,8 +95,8 @@ def parse_ref_links(soup):
             if href.startswith('http'):
                 ref_links[li_id] = href
             else:
-                # Можно сохранять относительную ссылку или игнорировать
-                ref_links[li_id] = href
+                # Относительная ссылка, добавляем базовый url Википедии
+                ref_links[li_id] = 'https://en.wikipedia.org' + href
     return ref_links
 
 # === Получение турниров с флагами и ссылками ===
@@ -224,7 +224,10 @@ def get_schedule():
                 f"⚔️ Счёт финала: {t['score']}"
             )
             if t.get('ref_links'):
-                s += f"\n🔗 Ссылка: {t['ref_links']}"
+                # Формируем кликаемую ссылку с markdown-ссылкой
+                # если несколько ссылок — берём первую
+                first_link = t['ref_links'].split(", ")[0]
+                s += f"\n🔗 [Ссылка на источник]({first_link})"
             results.append(s)
 
         return "\n\n".join(results)
@@ -327,7 +330,7 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_schedule()
     if len(data) > 3900:
         data = data[:3900] + "\n\n...и ещё турниры доступны на Википедии."
-    await update.message.reply_text(data)
+    await update.message.reply_text(data, parse_mode="Markdown")
     await send_commands_menu(update)
 
 async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
