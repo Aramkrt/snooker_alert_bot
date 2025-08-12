@@ -166,6 +166,17 @@ def get_schedule_tournaments():
                 })
 
         tournaments.sort(key=lambda x: x['start'])
+
+        # --- Ролл списка, чтобы сезон начинался с июня ---
+        june_index = None
+        for i, t in enumerate(tournaments):
+            if t['start'].month >= 6:
+                june_index = i
+                break
+
+        if june_index is not None and june_index > 0:
+            tournaments = tournaments[june_index:] + tournaments[:june_index]
+
         return tournaments
     except Exception as e:
         logging.error(f"Ошибка в get_schedule_tournaments: {e}")
