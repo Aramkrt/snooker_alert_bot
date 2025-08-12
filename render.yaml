@@ -8,4 +8,4 @@ services:
     pythonVersion: 3.11.8
     envVars:
       - key: TELEGRAM_TOKEN
-        fromSecret: 8380549936:AAH1Ac2QJRC4XwjH4Ybl2I7oKXOKfEfW-zU
+        fromSecret: TELEGRAM_TOKEN_SECRET_NAME
