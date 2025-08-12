@@ -2,7 +2,7 @@ import logging
 import asyncio
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time as dt_time
 import pytz
 import json
 import os
@@ -47,8 +47,8 @@ def parse_date(date_str):
         except Exception:
             return None
 
-# === Получение информации о турнирах ===
-def get_tournaments():
+# === Получение списка турниров с расписанием ===
+def get_tournaments_schedule():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
@@ -58,10 +58,10 @@ def get_tournaments():
         for table in tables:
             header = table.find('tr')
             headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            if {'Start', 'Finish', 'Tournament'}.issubset(set(headers)):
+            needed_headers = {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score'}
+            if needed_headers.issubset(set(headers)):
                 target_table = table
                 break
-
         if not target_table:
             return []
 
@@ -69,88 +69,47 @@ def get_tournaments():
         tournaments = []
         for row in rows:
             cols = row.find_all('td')
-            if len(cols) >= 3:
+            if len(cols) >= 7:
                 start_date = parse_date(cols[0].get_text(strip=True))
                 finish_date = parse_date(cols[1].get_text(strip=True))
                 tournament_name = cols[2].get_text(strip=True)
-                if start_date:
-                    tournaments.append({
-                        'start': start_date,
-                        'finish': finish_date,
-                        'name': tournament_name
-                    })
-        return tournaments
-    except Exception as e:
-        logging.error(f"Ошибка парсинга турниров: {e}")
-        return []
-
-def get_upcoming_tournament_tomorrow():
-    tournaments = get_tournaments()
-    tomorrow = datetime.now(LOCAL_TZ).date() + timedelta(days=1)
-    for t in tournaments:
-        if t['start'] == tomorrow:
-            return f"🎱 Завтра стартует чемпионат:\n🏆 {t['name']}\n📅 {t['start'].strftime('%d %B %Y')}"
-    return None
-
-def get_next_tournament_info():
-    tournaments = get_tournaments()
-    today = datetime.now(LOCAL_TZ).date()
-    future_tournaments = [t for t in tournaments if t['start'] >= today]
-    if not future_tournaments:
-        return "Пока нет запланированных турниров."
-    next_tournament = min(future_tournaments, key=lambda x: x['start'])
-    days_left = (next_tournament['start'] - today).days
-
-    if days_left == 0:
-        return f"🎱 Сегодня стартует чемпионат:\n🏆 {next_tournament['name']}\n📅 {next_tournament['start'].strftime('%d %B %Y')}"
-    elif days_left == 1:
-        return f"🎱 Завтра стартует чемпионат:\n🏆 {next_tournament['name']}\n📅 {next_tournament['start'].strftime('%d %B %Y')}"
-    else:
-        return (f"До следующего чемпионата «{next_tournament['name']}» осталось {days_left} дней.\n"
-                f"Дата начала: {next_tournament['start'].strftime('%d %B %Y')}")
-
-# === Получение расписания турниров ===
-def get_schedule():
-    try:
-        url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        tables = soup.find_all('table', {'class': 'wikitable'})
-        target_table = None
-        for table in tables:
-            header = table.find('tr')
-            headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            if {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score'}.issubset(set(headers)):
-                target_table = table
-                break
-
-        if not target_table:
-            return "Не удалось найти таблицу турниров."
-
-        rows = target_table.find_all('tr')[1:]
-        results = []
-        for row in rows:
-            cols = row.find_all('td')
-            if len(cols) >= 7:
-                start = cols[0].get_text(strip=True)
-                finish = cols[1].get_text(strip=True)
-                tournament = cols[2].get_text(strip=True)
                 venue = cols[3].get_text(separator=" ", strip=True)
                 winner = cols[4].get_text(strip=True)
-                runner_up = cols[6].get_text(strip=True)
                 score = cols[5].get_text(strip=True)
-                results.append(
-                    f"📅 {start} — {finish}\n"
-                    f"🏆 {tournament}\n"
-                    f"📍 {venue}\n"
-                    f"🥇 Победитель: {winner}\n"
-                    f"🥈 Финалист: {runner_up}\n"
-                    f"⚔️ Счёт финала: {score}"
-                )
+                runner_up = cols[6].get_text(strip=True)
 
-        if not results:
+                tournaments.append({
+                    'start': start_date,
+                    'finish': finish_date,
+                    'name': tournament_name,
+                    'venue': venue,
+                    'winner': winner,
+                    'score': score,
+                    'runner_up': runner_up,
+                })
+        return tournaments
+    except Exception as e:
+        logging.error(f"Ошибка в get_tournaments_schedule: {e}")
+        return []
+
+# === Получение расписания турниров в виде текста для команды /schedule ===
+def get_schedule():
+    try:
+        tournaments = get_tournaments_schedule()
+        if not tournaments:
             return "Нет данных о турнирах."
-
+        results = []
+        for t in tournaments:
+            start = t['start'].strftime('%d %B %Y') if t['start'] else "?"
+            finish = t['finish'].strftime('%d %B %Y') if t['finish'] else "?"
+            results.append(
+                f"📅 {start} — {finish}\n"
+                f"🏆 {t['name']}\n"
+                f"📍 {t['venue']}\n"
+                f"🥇 Победитель: {t['winner']}\n"
+                f"🥈 Финалист: {t['runner_up']}\n"
+                f"⚔️ Счёт финала: {t['score']}"
+            )
         return "\n\n".join(results)
     except Exception as e:
         return f"Ошибка при получении расписания: {e}"
@@ -194,7 +153,6 @@ async def send_commands_menu(update: Update):
     keyboard = [
         ["/start", "/unsubscribe"],
         ["/schedule", "/ranking"],
-        ["/next"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
     await update.message.reply_text("📋 Команды:", reply_markup=reply_markup)
@@ -251,11 +209,6 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("а сколько твой рейтинг?)")
     await send_commands_menu(update)
 
-async def next_tournament_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = get_next_tournament_info()
-    await update.message.reply_text(data)
-    await send_commands_menu(update)
-
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
     user = update.effective_user
@@ -282,9 +235,28 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === Ежедневная задача ===
 async def daily_notification(context: ContextTypes.DEFAULT_TYPE):
     try:
-        text = get_upcoming_tournament_tomorrow()
-        if not text:
-            text = get_next_tournament_info()
+        tournaments = get_tournaments_schedule()
+        if not tournaments:
+            text = "Информация о турнирах временно недоступна."
+        else:
+            today = datetime.now(LOCAL_TZ).date()
+            tomorrow = today + timedelta(days=1)
+            tomorrow_tournaments = [t for t in tournaments if t['start'] == tomorrow]
+            if tomorrow_tournaments:
+                t = tomorrow_tournaments[0]
+                text = (f"🎱 Завтра стартует чемпионат:\n🏆 {t['name']}\n"
+                        f"📅 {t['start'].strftime('%d %B %Y')}\n"
+                        f"📍 {t['venue']}")
+            else:
+                future_tournaments = [t for t in tournaments if t['start'] > today]
+                if future_tournaments:
+                    next_t = min(future_tournaments, key=lambda x: x['start'])
+                    days_left = (next_t['start'] - today).days
+                    text = (f"До следующего чемпионата «{next_t['name']}» осталось {days_left} дней.\n"
+                            f"Дата начала: {next_t['start'].strftime('%d %B %Y')}\n"
+                            f"Место проведения: {next_t['venue']}")
+                else:
+                    text = "Пока нет запланированных турниров."
 
         subscribers = load_subscribers()
         for chat_id in subscribers:
@@ -302,14 +274,13 @@ if __name__ == '__main__':
     nest_asyncio.apply()
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("ranking", ranking_command))
-    app.add_handler(CommandHandler("next", next_tournament_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
-    from datetime import time as dt_time
     app.job_queue.run_daily(daily_notification, time=dt_time(21, 0, tzinfo=LOCAL_TZ))
 
     app.run_polling()
