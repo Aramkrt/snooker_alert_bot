@@ -2,7 +2,7 @@ import logging
 import asyncio
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta, time as dt_time
+from datetime import datetime, timedelta, time
 import pytz
 import json
 import os
@@ -34,24 +34,75 @@ def save_subscribers(subscribers):
     with open(SUBSCRIBERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(list(subscribers), f)
 
-# === Парсер даты из расписания с учётом сезона ===
-def parse_schedule_date(date_str, season_start_year=2025, season_end_year=2026):
-    from datetime import datetime
+# === Парсинг дат ===
+def parse_date(date_str):
+    """Парсинг даты даже если диапазон."""
     try:
-        dt = datetime.strptime(date_str.strip(), "%d %b")
+        date_str = date_str.split("–")[0].split("-")[0].strip()
+        return datetime.strptime(date_str, "%d %B %Y").date()
     except Exception:
-        return None
+        try:
+            dt = datetime.strptime(date_str, "%B %Y")
+            return dt.replace(day=1).date()
+        except Exception:
+            return None
 
-    month = dt.month
-    # Предполагаем сезон с июня (6) по май (5) следующего года
-    if month >= 6:
-        year = season_start_year
-    else:
-        year = season_end_year
+# === Получение информации о турнирах ===
+def get_tournaments():
+    try:
+        url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        tables = soup.find_all('table', {'class': 'wikitable'})
+        target_table = None
+        for table in tables:
+            header = table.find('tr')
+            headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
+            if {'Start', 'Finish', 'Tournament'}.issubset(set(headers)):
+                target_table = table
+                break
 
-    return dt.replace(year=year).date()
+        if not target_table:
+            return []
 
-# === Получение расписания турниров с датами в формате date ===
+        rows = target_table.find_all('tr')[1:]
+        tournaments = []
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) >= 3:
+                start_date = parse_date(cols[0].get_text(strip=True))
+                finish_date = parse_date(cols[1].get_text(strip=True))
+                tournament_name = cols[2].get_text(strip=True)
+                if start_date:
+                    tournaments.append({
+                        'start': start_date,
+                        'finish': finish_date,
+                        'name': tournament_name
+                    })
+        return tournaments
+    except Exception as e:
+        logging.error(f"Ошибка парсинга турниров: {e}")
+        return []
+
+def get_upcoming_tournament_tomorrow():
+    tournaments = get_tournaments()
+    tomorrow = datetime.now(LOCAL_TZ).date() + timedelta(days=1)
+    for t in tournaments:
+        if t['start'] == tomorrow:
+            return f"🎱 Завтра стартует чемпионат:\n🏆 {t['name']}\n📅 {t['start'].strftime('%d %B %Y')}"
+    return None
+
+def get_next_tournament_info():
+    tournaments = get_tournaments()
+    today = datetime.now(LOCAL_TZ).date()
+    future_tournaments = [t for t in tournaments if t['start'] > today]
+    if not future_tournaments:
+        return "Пока нет запланированных турниров."
+    next_tournament = min(future_tournaments, key=lambda x: x['start'])
+    days_left = (next_tournament['start'] - today).days
+    return f"До следующего чемпионата «{next_tournament['name']}» осталось {days_left} дней.\nДата начала: {next_tournament['start'].strftime('%d %B %Y')}"
+
+# === Получение расписания турниров ===
 def get_schedule():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
@@ -67,38 +118,23 @@ def get_schedule():
                 break
 
         if not target_table:
-            return [], "Не удалось найти таблицу турниров."
+            return "Не удалось найти таблицу турниров."
 
         rows = target_table.find_all('tr')[1:]
         results = []
-        tournaments = []
-
         for row in rows:
             cols = row.find_all('td')
             if len(cols) >= 7:
-                start_str = cols[0].get_text(strip=True)
-                finish_str = cols[1].get_text(strip=True)
+                start = cols[0].get_text(strip=True)
+                finish = cols[1].get_text(strip=True)
                 tournament = cols[2].get_text(strip=True)
+                # ✅ Исправлено — гарантированный пробел между элементами
                 venue = cols[3].get_text(separator=" ", strip=True)
                 winner = cols[4].get_text(strip=True)
-                score = cols[5].get_text(strip=True)
                 runner_up = cols[6].get_text(strip=True)
-
-                start_date = parse_schedule_date(start_str)
-                finish_date = parse_schedule_date(finish_str)
-
-                tournaments.append({
-                    "start": start_date,
-                    "finish": finish_date,
-                    "name": tournament,
-                    "venue": venue,
-                    "winner": winner,
-                    "runner_up": runner_up,
-                    "score": score,
-                })
-
+                score = cols[5].get_text(strip=True)
                 results.append(
-                    f"📅 {start_str} — {finish_str}\n"
+                    f"📅 {start} — {finish}\n"
                     f"🏆 {tournament}\n"
                     f"📍 {venue}\n"
                     f"🥇 Победитель: {winner}\n"
@@ -107,35 +143,11 @@ def get_schedule():
                 )
 
         if not results:
-            return [], "Нет данных о турнирах."
+            return "Нет данных о турнирах."
 
-        return tournaments, "\n\n".join(results)
+        return "\n\n".join(results)
     except Exception as e:
-        return [], f"Ошибка при получении расписания: {e}"
-
-# === Уведомления: ближайший турнир и турнир, стартующий завтра ===
-def get_upcoming_tournament_from_schedule():
-    tournaments, _ = get_schedule()
-    if not tournaments:
-        return "Не удалось получить данные о турнирах для уведомления."
-
-    today = datetime.now(LOCAL_TZ).date()
-    tomorrow = today + timedelta(days=1)
-
-    tournaments_sorted = sorted([t for t in tournaments if t['start'] is not None], key=lambda x: x['start'])
-
-    # Турнир, который стартует завтра
-    for t in tournaments_sorted:
-        if t['start'] == tomorrow:
-            return f"🎱 Завтра стартует чемпионат:\n🏆 {t['name']}\n📅 {t['start'].strftime('%d %B %Y')}"
-
-    # Если нет турнира завтра, ближайший будущий турнир
-    future_tournaments = [t for t in tournaments_sorted if t['start'] > today]
-    if not future_tournaments:
-        return "Пока нет запланированных турниров."
-    next_tournament = future_tournaments[0]
-    days_left = (next_tournament['start'] - today).days
-    return f"До следующего чемпионата «{next_tournament['name']}» осталось {days_left} дней.\nДата начала: {next_tournament['start'].strftime('%d %B %Y')}"
+        return f"Ошибка при получении расписания: {e}"
 
 # === Получение рейтинга ===
 def get_world_ranking():
@@ -205,7 +217,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Получаю расписание чемпионатов...")
-    tournaments, data = get_schedule()
+    data = get_schedule()
     if len(data) > 3900:
         data = data[:3900] + "\n\n...и ещё турниры доступны на Википедии."
     await update.message.reply_text(data)
@@ -258,7 +270,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === Ежедневная задача ===
 async def daily_notification(context: ContextTypes.DEFAULT_TYPE):
     try:
-        text = get_upcoming_tournament_from_schedule()
+        text = get_upcoming_tournament_tomorrow()
+        if not text:
+            text = get_next_tournament_info()
+
         subscribers = load_subscribers()
         for chat_id in subscribers:
             try:
@@ -281,7 +296,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("ranking", ranking_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
-    # Запуск ежедневного задания в 21:00 по LOCAL_TZ (Москва)
+    from datetime import time as dt_time
     app.job_queue.run_daily(daily_notification, time=dt_time(21, 0, tzinfo=LOCAL_TZ))
 
     app.run_polling()
