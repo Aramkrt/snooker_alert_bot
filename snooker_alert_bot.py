@@ -24,6 +24,31 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# === Конвертация трехбуквенных кодов стран (ISO 3166-1 alpha-3) в двухбуквенные (ISO 3166-1 alpha-2) ===
+# Минимальный словарь для примера (дополни при необходимости)
+alpha3_to_alpha2 = {
+    'ENG': 'GB',  # Англия — GB (потому что флаг Великобритании)
+    'SCO': 'GB',  # Шотландия
+    'WAL': 'GB',  # Уэльс
+    'NIR': 'GB',  # Северная Ирландия
+    'CHN': 'CN',
+    'AUS': 'AU',
+    'BEL': 'BE',
+    'IRL': 'IE',
+    'FRA': 'FR',
+    'GER': 'DE',
+    'NZL': 'NZ',
+    'RSA': 'ZA',
+    'MAL': 'MY',
+    'RUS': 'RU',
+    # Добавь по необходимости
+}
+
+def alpha2_to_emoji(alpha2):
+    # Преобразует alpha2 код в emoji флага
+    OFFSET = 127397
+    return ''.join(chr(ord(c) + OFFSET) for c in alpha2.upper())
+
 # === Подписчики ===
 def load_subscribers():
     if os.path.exists(SUBSCRIBERS_FILE):
@@ -58,44 +83,37 @@ def parse_start_finish_date(date_str):
     except Exception:
         return None
 
-# === Функции для флагов ===
-def alpha2_to_emoji(alpha2):
-    if len(alpha2) != 2:
-        return ''
-    OFFSET = 127397
-    return chr(ord(alpha2[0].upper()) + OFFSET) + chr(ord(alpha2[1].upper()) + OFFSET)
+# === Получение словаря ссылок из сносок ===
+def parse_ref_links(soup):
+    ref_links = {}
+    # Обычно сноски — это <li id="cite_note-xyz"> в ol.references
+    for li in soup.find_all("li", id=True):
+        li_id = li['id']
+        a = li.find('a', href=True)
+        if a:
+            href = a['href']
+            if href.startswith('http'):
+                ref_links[li_id] = href
+            else:
+                # Можно сохранять относительную ссылку или игнорировать
+                ref_links[li_id] = href
+    return ref_links
 
-# Пример словаря для конвертации ISO Alpha-3 в Alpha-2 коды (можно дополнить при необходимости)
-alpha3_to_alpha2 = {
-    'ENG': 'GB',
-    'SCO': 'GB',
-    'WAL': 'GB',
-    'WLS': 'GB',
-    'NIR': 'GB',
-    'CHN': 'CN',
-    'IRL': 'IE',
-    'USA': 'US',
-    'AUS': 'AU',
-    'NZL': 'NZ',
-    'FRA': 'FR',
-    'GER': 'DE',
-    'ESP': 'ES',
-    'RUS': 'RU',
-    # Добавляйте по необходимости
-}
-
-# === Получение информации о турнирах с флагами ===
+# === Получение турниров с флагами и ссылками ===
 def get_schedule_tournaments():
     try:
         url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
+
+        ref_links = parse_ref_links(soup)
+
         tables = soup.find_all('table', {'class': 'wikitable'})
         target_table = None
         for table in tables:
             header = table.find('tr')
             headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            if {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score'}.issubset(set(headers)):
+            if {'Start', 'Finish', 'Tournament', 'Venue', 'Winner', 'Runner-up', 'Score', 'Ref.'}.issubset(set(headers)):
                 target_table = table
                 break
 
@@ -106,7 +124,7 @@ def get_schedule_tournaments():
         tournaments = []
         for row in rows:
             cols = row.find_all('td')
-            if len(cols) >= 7:
+            if len(cols) >= 8:
                 start_str = cols[0].get_text(strip=True)
                 finish_str = cols[1].get_text(strip=True)
                 tournament = cols[2].get_text(strip=True)
@@ -140,6 +158,18 @@ def get_schedule_tournaments():
 
                 score = cols[5].get_text(strip=True)
 
+                # Парсим ссылки из Ref.
+                ref_cell = cols[7]
+                ref_links_list = []
+                for sup in ref_cell.find_all('sup'):
+                    a = sup.find('a', href=True)
+                    if a:
+                        href_id = a['href'].lstrip('#')
+                        if href_id in ref_links:
+                            ref_links_list.append(ref_links[href_id])
+
+                ref_links_str = ", ".join(ref_links_list) if ref_links_list else ""
+
                 start_date = parse_start_finish_date(start_str)
                 finish_date = parse_start_finish_date(finish_str)
 
@@ -154,6 +184,7 @@ def get_schedule_tournaments():
                     'winner': f"{winner_flag_emoji} {winner_name}" if winner_flag_emoji else winner_name,
                     'runner_up': f"{runner_flag_emoji} {runner_name}" if runner_flag_emoji else runner_name,
                     'score': score,
+                    'ref_links': ref_links_str,
                     'start_str': start_str,
                     'finish_str': finish_str,
                 })
@@ -184,7 +215,7 @@ def get_schedule():
 
         results = []
         for t in tournaments:
-            results.append(
+            s = (
                 f"📅 {t['start_str']} — {t['finish_str']}\n"
                 f"🏆 {t['tournament']}\n"
                 f"📍 {t['venue']}\n"
@@ -192,48 +223,15 @@ def get_schedule():
                 f"🥈 Финалист: {t['runner_up']}\n"
                 f"⚔️ Счёт финала: {t['score']}"
             )
+            if t.get('ref_links'):
+                s += f"\n🔗 Ссылка: {t['ref_links']}"
+            results.append(s)
+
         return "\n\n".join(results)
     except Exception as e:
         return f"Ошибка при получении расписания: {e}"
 
-# === Остальной код без изменений ===
-
-def get_tournaments():
-    try:
-        url = "https://en.wikipedia.org/wiki/2025%E2%80%9326_snooker_season"
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        tables = soup.find_all('table', {'class': 'wikitable'})
-        target_table = None
-        for table in tables:
-            header = table.find('tr')
-            headers = [th.get_text(strip=True) for th in header.find_all(['th', 'td'])]
-            if {'Start', 'Finish', 'Tournament'}.issubset(set(headers)):
-                target_table = table
-                break
-
-        if not target_table:
-            return []
-
-        rows = target_table.find_all('tr')[1:]
-        tournaments = []
-        for row in rows:
-            cols = row.find_all('td')
-            if len(cols) >= 3:
-                start_date = parse_date(cols[0].get_text(strip=True))
-                finish_date = parse_date(cols[1].get_text(strip=True))
-                tournament_name = cols[2].get_text(strip=True)
-                if start_date:
-                    tournaments.append({
-                        'start': start_date,
-                        'finish': finish_date,
-                        'name': tournament_name
-                    })
-        return tournaments
-    except Exception as e:
-        logging.error(f"Ошибка парсинга турниров: {e}")
-        return []
-
+# === Получение ближайшего турнира для уведомлений ===
 def get_upcoming_tournament_tomorrow():
     try:
         tournaments = get_schedule_tournaments()
@@ -257,6 +255,7 @@ def get_upcoming_tournament_tomorrow():
         logging.error(f"Ошибка в get_upcoming_tournament_tomorrow: {e}")
         return None
 
+# === Получение рейтинга ===
 def get_world_ranking():
     try:
         url = "https://en.wikipedia.org/wiki/Snooker_world_rankings"
@@ -290,6 +289,7 @@ def get_world_ranking():
     except Exception as e:
         return f"Ошибка при получении рейтинга: {e}"
 
+# === Команды бота ===
 async def send_commands_menu(update: Update):
     keyboard = [
         ["/start", "/unsubscribe"],
@@ -374,6 +374,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("мы все учтем, спасибо!")
     await send_commands_menu(update)
 
+# === Новая команда "Следующий чемпионат" ===
 async def next_tournament_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tournaments = get_schedule_tournaments()
     if not tournaments:
@@ -397,6 +398,7 @@ async def next_tournament_command(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(msg)
     await send_commands_menu(update)
 
+# === Ежедневная задача уведомления ===
 async def daily_notification(context: ContextTypes.DEFAULT_TYPE):
     try:
         text = get_upcoming_tournament_tomorrow()
