@@ -1,5 +1,5 @@
 python-telegram-bot==20.7
 requests
 beautifulsoup4
-schedule
+pytz
 nest_asyncio
