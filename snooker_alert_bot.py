@@ -8,6 +8,8 @@ import json
 import os
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from telegram import Update, ReplyKeyboardMarkup
+import sys
+print("Python version:", sys.version)
 
 # === Конфигурация ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
