@@ -297,7 +297,7 @@ async def send_commands_menu(update: Update):
         ["/upcoming_tournament"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text("📋 что интересует?", reply_markup=reply_markup)
+    await update.message.reply_text("📋 команды:", reply_markup=reply_markup)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_chat.id)
