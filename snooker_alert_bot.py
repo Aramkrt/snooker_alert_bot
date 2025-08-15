@@ -427,6 +427,6 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
 
     # Запуск ежедневного задания в 21:00 по Москве
-    app.job_queue.run_daily(daily_notification, time=dt_time(21, 0, tzinfo=LOCAL_TZ))
+    app.job_queue.run_daily(daily_notification, time=dt_time(0, 42, tzinfo=LOCAL_TZ))
 
     app.run_polling()
